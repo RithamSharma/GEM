@@ -2,3 +2,13 @@
 /Cargo.lock
 /compile_commands.json
 .cache
+*.log
+*.pb
+*.wdb
+*.jou
+xsim.dir/
+*.gv
+*.gemparts
+gem_output.vcd
+__pycache__/
+*.pyc

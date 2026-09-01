@@ -11,6 +11,10 @@ The synthesis and mapping is slower than the compiling/elaboration process of CP
 
 **See [usage.md](./usage.md) for usage documentation.**
 
+For the heterogeneous `DSP48E2`/`CARRY4`/`SRLC32E` extension, its supported
+contract, verification command, and manual run flow, see
+**[SUBMISSION.md](./SUBMISSION.md)**.
+
 ## Citation
 Please cite our paper if you find GEM useful.
 

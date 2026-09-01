@@ -1,0 +1,5 @@
+Repository: https://github.com/Aishwary-Kumar-25/GEM.git
+Selected branch: updated_gem_branch
+Selected revision: 0764603add3601ce5c40f97ba7e66a410394673e
+Selection reason: newest remote updated branch as of 2026-09-01; it contains
+gem2_updated revision f29e9ce plus the two September 1 v3 commits.
