@@ -514,6 +514,9 @@ impl Partition {
         let mut realized_inputs = staged.primary_inputs.as_ref()
             .cloned().unwrap_or_default();
         let mut num_srams = 0;
+        let mut num_dsps = 0;
+        let mut num_carry4s = 0;
+        let mut num_srlc32es = 0;
         let mut comb_outputs_activations = IndexMap::<usize, IndexSet<usize>>::new();
         for &endpt_i in endpoints {
             let edg = staged.get_endpoint_group(aig, endpt_i);
@@ -533,14 +536,34 @@ impl Partition {
                 EndpointGroup::StagedIOPin(pin) => {
                     comb_outputs_activations.entry(pin).or_default().insert(2);
                 },
+                EndpointGroup::DSPBlock(_) => {
+                    num_dsps += 1;
+                },
+                EndpointGroup::Carry4Block(_) => {
+                    num_carry4s += 1;
+                },
+                EndpointGroup::Srlc32eBlock(_) => {
+                    num_srlc32es += 1;
+                }
             }
         }
+
         let num_output_dups = comb_outputs_activations.iter()
             .map(|(_, ckens)| ckens.len() - 1)
             .sum::<usize>();
-        let num_reserved_writeouts = num_srams + (num_output_dups + 31) / 32;
+        // M-02 fix: reserve capacity for the macro *input* words too, not
+        // just their outputs. flatten.rs's num_writeouts (which this must
+        // stay in sync with) now includes num_macro_input_words as its own
+        // region of the 256-slot shared_writeouts budget; if this
+        // reservation doesn't grow to match, build_one could still admit
+        // enough "normal" writeouts to leave no room for it, silently
+        // overflowing shared_writeouts at runtime.
+        let num_macro_input_words = num_dsps * 5 + num_carry4s + num_srlc32es;
+        let num_reserved_outputs = num_srams + (num_dsps * 2) + num_carry4s + (num_srlc32es * 2) + num_macro_input_words;
+        let num_reserved_duplicates = (num_output_dups + 31) / 32;
+        let num_reserved_writeouts = num_reserved_outputs + num_reserved_duplicates;
         if num_reserved_writeouts >= BOOMERANG_MAX_WRITEOUTS ||
-            num_srams * 4 + num_output_dups > BOOMERANG_MAX_WRITEOUTS
+            num_srams * 4 + (num_dsps * 5) + num_carry4s + num_srlc32es + num_output_dups > BOOMERANG_MAX_WRITEOUTS
         {
             // overflowed writeout
             return None

@@ -36,6 +36,65 @@ pub struct RAMBlock {
     pub port_w_wr_data_iv: [usize; 32],
 }
 
+/// A DSP48E2 macro
+#[derive(Debug, Clone)]
+pub struct DSPBlock {
+    pub a_iv: [usize; 27],
+    pub d_iv: [usize; 27],
+    pub b_iv: [usize; 18],
+    pub c_iv: [usize; 48],
+    pub opmode_iv: [usize; 9],
+    pub alumode_iv: [usize; 4],
+    pub inmode_iv: [usize; 5],
+    pub p_out: [usize; 48],
+    pub clk_iv: usize,
+    pub cep_iv: usize,
+    pub rstp_iv: usize,
+    pub preg: u32,
+}
+
+impl Default for DSPBlock {
+    fn default() -> Self {
+        Self {
+            a_iv: [0; 27],
+            d_iv: [0; 27],
+            b_iv: [0; 18],
+            c_iv: [0; 48],
+            opmode_iv: [0; 9],
+            alumode_iv: [0; 4],
+            inmode_iv: [0; 5],
+            p_out: [0; 48],
+            clk_iv: 0,
+            cep_iv: 1,
+            rstp_iv: 0,
+            preg: 1, // Default Xilinx behavior
+        }
+    }
+}
+
+/// A CARRY4 macro
+#[derive(Debug, Default, Clone)]
+pub struct Carry4Block {
+    pub di_iv: [usize; 4],
+    pub s_iv: [usize; 4],
+    pub cin_iv: usize,
+    pub cyinit_iv: usize,
+    pub o_out: [usize; 4],
+    pub co_out: [usize; 4],
+}
+
+/// An SRLC32E macro
+#[derive(Debug, Default, Clone)]
+pub struct Srlc32eBlock {
+    pub d_iv: usize,
+    pub ce_iv: usize,
+    pub a_iv: [usize; 5],
+    pub clk_iv: usize,
+    pub q_out: usize,
+    pub q31_out: usize,
+    pub init: u32,
+}
+
 /// A type of endpoint group. can be a primary output-related pin,
 /// a D flip-flop, or a ram block.
 ///
@@ -51,6 +110,9 @@ pub enum EndpointGroup<'i> {
     DFF(&'i DFF),
     RAMBlock(&'i RAMBlock),
     StagedIOPin(usize),
+    DSPBlock(&'i DSPBlock),
+    Carry4Block(&'i Carry4Block),
+    Srlc32eBlock(&'i Srlc32eBlock),
 }
 
 impl EndpointGroup<'_> {
@@ -79,6 +141,28 @@ impl EndpointGroup<'_> {
                 }
             },
             Self::StagedIOPin(idx) => f(idx),
+            Self::DSPBlock(dsp) => {
+                f(dsp.clk_iv >> 1);
+                for i in 0..27 { f(dsp.a_iv[i] >> 1); f(dsp.d_iv[i] >> 1); }
+                for i in 0..18 { f(dsp.b_iv[i] >> 1); }
+                for i in 0..48 { f(dsp.c_iv[i] >> 1); }
+                for i in 0..9 { f(dsp.opmode_iv[i] >> 1); }
+                for i in 0..4 { f(dsp.alumode_iv[i] >> 1); }
+                for i in 0..5 { f(dsp.inmode_iv[i] >> 1); }
+                f(dsp.cep_iv >> 1);
+                f(dsp.rstp_iv >> 1);
+            },
+            Self::Carry4Block(carry4) => {
+                for i in 0..4 { f(carry4.di_iv[i] >> 1); f(carry4.s_iv[i] >> 1); }
+                f(carry4.cin_iv >> 1);
+                f(carry4.cyinit_iv >> 1);
+            },
+            Self::Srlc32eBlock(srlc) => {
+                f(srlc.d_iv >> 1);
+                f(srlc.ce_iv >> 1);
+                f(srlc.clk_iv >> 1);
+                for i in 0..5 { f(srlc.a_iv[i] >> 1); }
+            }
         }
     }
 }
@@ -101,6 +185,12 @@ pub enum DriverType {
     DFF(usize),
     /// Driven by a 13-bit by 32-bit RAM block (with its index)
     SRAM(usize),
+    /// Driven by a DSP48E2 block (with its index, and output bit offset 0..48)
+    DSP(usize, usize),
+    /// Driven by a CARRY4 block (with its index, and output bit offset 0..8, where 0..4 is O, 4..8 is CO)
+    CARRY4(usize, usize),
+    /// Driven by an SRLC32E block (with its index, and output bit offset 0=Q, 1=Q31)
+    SRLC32E(usize, usize),
     /// Tie0: tied to zero. Only the 0-th aig pin is allowed to have this.
     Tie0
 }
@@ -140,6 +230,12 @@ pub struct AIG {
     pub dffs: IndexMap<usize, DFF>,
     /// The SRAMs, indexed by cell id
     pub srams: IndexMap<usize, RAMBlock>,
+    /// The DSPs, indexed by cell id
+    pub dsps: IndexMap<usize, DSPBlock>,
+    /// The CARRY4s, indexed by cell id
+    pub carry4s: IndexMap<usize, Carry4Block>,
+    /// The SRLC32Es, indexed by cell id
+    pub srlc32es: IndexMap<usize, Srlc32eBlock>,
     /// The fanout CSR start array.
     pub fanouts_start: Vec<usize>,
     /// The fanout CSR array.
@@ -372,6 +468,39 @@ impl AIG {
             let sram = self.srams.entry(cellid).or_default();
             sram.port_r_rd_data[netlistdb.pinnames[pinid].2.unwrap() as usize] = o;
         }
+        else if celltype == "DSP48E2" {
+            let p_idx = netlistdb.pinnames[pinid].2.unwrap() as usize;
+            let o = self.add_aigpin(DriverType::DSP(cellid, p_idx));
+            self.pin2aigpin_iv[pinid] = o << 1;
+            let dsp = self.dsps.entry(cellid).or_default();
+            dsp.p_out[p_idx] = o;
+        }
+        else if celltype == "CARRY4" {
+            let p_idx = netlistdb.pinnames[pinid].2.unwrap() as usize;
+            let pin_name = netlistdb.pinnames[pinid].1.as_str();
+            let is_co = pin_name == "CO";
+            let global_idx = if is_co { p_idx + 4 } else { p_idx };
+            let o = self.add_aigpin(DriverType::CARRY4(cellid, global_idx));
+            self.pin2aigpin_iv[pinid] = o << 1;
+            let carry = self.carry4s.entry(cellid).or_default();
+            if is_co {
+                carry.co_out[p_idx] = o;
+            } else {
+                carry.o_out[p_idx] = o;
+            }
+        }
+        else if celltype == "SRLC32E" {
+            let pin_name = netlistdb.pinnames[pinid].1.as_str();
+            let p_idx = if pin_name == "Q" { 0 } else { 1 };
+            let o = self.add_aigpin(DriverType::SRLC32E(cellid, p_idx));
+            self.pin2aigpin_iv[pinid] = o << 1;
+            let srlc = self.srlc32es.entry(cellid).or_default();
+            if p_idx == 0 {
+                srlc.q_out = o;
+            } else {
+                srlc.q31_out = o;
+            }
+        }
         else if celltype == "CKLNQD" {
             let mut prev_cp = usize::MAX;
             let mut prev_en = usize::MAX;
@@ -447,8 +576,15 @@ impl AIG {
         };
 
         for cellid in 1..netlistdb.num_cells {
+            // F-02 fix: DSP48E2's PREG and SRLC32E's shift register are both
+            // clocked, exactly like a DFF, so their CLK pin must go through
+            // the same clock-discovery prepass a DFF's CLK does. Without
+            // this, clock_pin2aigpins never gets an entry for them and
+            // there is no resolved edge-enable literal to gate their
+            // register commit on (see the DSPBlock/Srlc32eBlock population
+            // loop below, and the clken wiring in flatten.rs).
             if !matches!(netlistdb.celltypes[cellid].as_str(),
-                         "DFF" | "DFFSR" | "$__RAMGEM_SYNC_") {
+                         "DFF" | "DFFSR" | "$__RAMGEM_SYNC_" | "DSP48E2" | "SRLC32E") {
                 continue
             }
             for pinid in netlistdb.cell2pin.iter_set(cellid) {
@@ -491,6 +627,42 @@ impl AIG {
                 pinid
             );
         }
+
+        let mut params_map: std::collections::HashMap<String, std::collections::HashMap<String, String>> = std::collections::HashMap::new();
+        let param_path = std::env::var_os("GEM_PARAMS_FILE")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default().join("test_circuit/params.json"));
+        if let Ok(params_str) = std::fs::read_to_string(&param_path) {
+            if let Ok(json) = serde_json::from_str(&params_str) {
+                params_map = json;
+            }
+        }
+
+        let parse_verilog_literal = |s: &str| -> u32 {
+            let s = s.trim();
+            if s.contains('\'') {
+                let parts: Vec<&str> = s.split('\'').collect();
+                if parts.len() < 2 { return 0; }
+                let val_str = parts[1];
+                if val_str.starts_with("sd") || val_str.starts_with('d') {
+                    let num = val_str.trim_start_matches("sd").trim_start_matches('d').replace('_', "");
+                    num.parse::<u32>().unwrap_or_else(|_| panic!("invalid decimal Verilog literal {s}"))
+                } else if val_str.starts_with("sh") || val_str.starts_with('h') {
+                    let num = val_str.trim_start_matches("sh").trim_start_matches('h').replace('_', "");
+                    u32::from_str_radix(&num, 16).unwrap_or_else(|_| panic!("invalid hexadecimal Verilog literal {s}"))
+                } else if val_str.starts_with("sb") || val_str.starts_with('b') {
+                    let num = val_str.trim_start_matches("sb").trim_start_matches('b').replace('_', "");
+                    u32::from_str_radix(&num, 2).unwrap_or_else(|_| panic!("invalid binary Verilog literal {s}"))
+                } else if val_str.starts_with("so") || val_str.starts_with('o') {
+                    let num = val_str.trim_start_matches("so").trim_start_matches('o').replace('_', "");
+                    u32::from_str_radix(&num, 8).unwrap_or_else(|_| panic!("invalid octal Verilog literal {s}"))
+                } else {
+                    panic!("unsupported Verilog literal {s}")
+                }
+            } else {
+                s.replace('_', "").parse::<u32>().unwrap_or_else(|_| panic!("invalid Verilog literal {s}"))
+            }
+        };
 
         for cellid in 0..netlistdb.num_cells {
             if matches!(netlistdb.celltypes[cellid].as_str(), "DFF" | "DFFSR") {
@@ -565,17 +737,130 @@ impl AIG {
                 }
                 *aig.srams.get_mut(&cellid).unwrap() = sram;
             }
+            // F-01 fix: DSPBlock/Carry4Block/Srlc32eBlock were only ever
+            // populated for their OUTPUT pins, inside the DFS pass above
+            // (dsp.p_out, carry.o_out/co_out, srlc.q_out/q31_out). Their
+            // INPUT fields (a_iv, b_iv, ..., di_iv, s_iv, ..., d_iv, ce_iv,
+            // ...) were left at their `Default` value of all-zero forever,
+            // i.e. every macro input was silently tied to constant 0
+            // regardless of what the netlist actually wired it to. This
+            // mirrors the DFF/RAM population above: pin2aigpin_iv is
+            // already fully resolved for every pin by the DFS pass that
+            // ran before this loop, so we just have to read it out and
+            // store it on the macro descriptor.
+            else if netlistdb.celltypes[cellid].as_str() == "DSP48E2" {
+                let mut dsp = aig.dsps.entry(cellid).or_default().clone();
+                let cellname = format!("{}", netlistdb.cellnames[cellid]);
+                let cellname_bare = cellname.trim_start_matches('\\').trim();
+                if let Some(params) = params_map.get(cellname_bare) {
+                    if let Some(preg_str) = params.get("PREG") {
+                        dsp.preg = parse_verilog_literal(preg_str);
+                    }
+                    assert_eq!(dsp.preg, 1, "DSP48E2 {} uses unsupported PREG={}; only PREG=1 is supported", cellname_bare, dsp.preg);
+                    if let Some(use_mult) = params.get("USE_MULT") {
+                        assert_eq!(use_mult, "MULTIPLY", "DSP48E2 {} uses unsupported USE_MULT={}", cellname_bare, use_mult);
+                    }
+                    if let Some(use_simd) = params.get("USE_SIMD") {
+                        assert_eq!(use_simd, "ONE48", "DSP48E2 {} uses unsupported USE_SIMD={}", cellname_bare, use_simd);
+                    }
+                }
+                for pinid in netlistdb.cell2pin.iter_set(cellid) {
+                    let bit = netlistdb.pinnames[pinid].2.map(|i| i as usize);
+                    let pin_iv = aig.pin2aigpin_iv[pinid];
+                    match netlistdb.pinnames[pinid].1.as_str() {
+                        "A" => dsp.a_iv[bit.unwrap()] = pin_iv,
+                        "D" => dsp.d_iv[bit.unwrap()] = pin_iv,
+                        "B" => dsp.b_iv[bit.unwrap()] = pin_iv,
+                        "C" => dsp.c_iv[bit.unwrap()] = pin_iv,
+                        "OPMODE" => dsp.opmode_iv[bit.unwrap()] = pin_iv,
+                        "ALUMODE" => dsp.alumode_iv[bit.unwrap()] = pin_iv,
+                        "INMODE" => dsp.inmode_iv[bit.unwrap()] = pin_iv,
+                        "CEP" => dsp.cep_iv = pin_iv,
+                        "RSTP" => dsp.rstp_iv = pin_iv,
+                        "CLK" => dsp.clk_iv = aig.trace_clock_pin(
+                            netlistdb, pinid, false,
+                            false
+                        ).unwrap(),
+                        _ => {}
+                    }
+                }
+                *aig.dsps.get_mut(&cellid).unwrap() = dsp;
+            }
+            else if netlistdb.celltypes[cellid].as_str() == "CARRY4" {
+                let mut carry = aig.carry4s.entry(cellid).or_default().clone();
+                for pinid in netlistdb.cell2pin.iter_set(cellid) {
+                    let bit = netlistdb.pinnames[pinid].2.map(|i| i as usize);
+                    let pin_iv = aig.pin2aigpin_iv[pinid];
+                    match netlistdb.pinnames[pinid].1.as_str() {
+                        "DI" => carry.di_iv[bit.unwrap()] = pin_iv,
+                        "S" => carry.s_iv[bit.unwrap()] = pin_iv,
+                        // F-03 note: the Zenith macro stub (zenith_macros.v)
+                        // declares this pin CIN while a real Xilinx CARRY4
+                        // instance (and this repo's own test stub) uses CI.
+                        // Accept either spelling here so a generically
+                        // preserved netlist doesn't silently lose its carry
+                        // input just because of that naming mismatch.
+                        "CIN" | "CI" => carry.cin_iv = pin_iv,
+                        "CYINIT" => carry.cyinit_iv = pin_iv,
+                        _ => {}
+                    }
+                }
+                *aig.carry4s.get_mut(&cellid).unwrap() = carry;
+            }
+            else if netlistdb.celltypes[cellid].as_str() == "SRLC32E" {
+                let mut srlc = aig.srlc32es.entry(cellid).or_default().clone();
+                let cellname = format!("{}", netlistdb.cellnames[cellid]);
+                let cellname_bare = cellname.trim_start_matches('\\').trim();
+                if let Some(params) = params_map.get(cellname_bare) {
+                    if let Some(init_str) = params.get("INIT") {
+                        srlc.init = parse_verilog_literal(init_str);
+                    }
+                }
+                for pinid in netlistdb.cell2pin.iter_set(cellid) {
+                    let bit = netlistdb.pinnames[pinid].2.map(|i| i as usize);
+                    let pin_iv = aig.pin2aigpin_iv[pinid];
+                    match netlistdb.pinnames[pinid].1.as_str() {
+                        "D" => srlc.d_iv = pin_iv,
+                        "CE" => srlc.ce_iv = pin_iv,
+                        "A" => srlc.a_iv[bit.unwrap()] = pin_iv,
+                        "CLK" => srlc.clk_iv = aig.trace_clock_pin(
+                            netlistdb, pinid, false,
+                            false
+                        ).unwrap(),
+                        _ => {}
+                    }
+                }
+                *aig.srlc32es.get_mut(&cellid).unwrap() = srlc;
+            }
         }
 
         aig.fanouts_start = vec![0; aig.num_aigpins + 2];
         for (_i, driver) in aig.drivers.iter().enumerate() {
             if let DriverType::AndGate(a, b) = *driver {
-                if (a >> 1) != 0 {
-                    aig.fanouts_start[a >> 1] += 1;
-                }
-                if (b >> 1) != 0 {
-                    aig.fanouts_start[b >> 1] += 1;
-                }
+                if (a >> 1) != 0 { aig.fanouts_start[a >> 1] += 1; }
+                if (b >> 1) != 0 { aig.fanouts_start[b >> 1] += 1; }
+            } else if let DriverType::DSP(cellid, _) = *driver {
+                let dsp = aig.dsps.get(&cellid).expect("missing DSP descriptor");
+                if (dsp.clk_iv >> 1) != 0 { aig.fanouts_start[dsp.clk_iv >> 1] += 1; }
+                for idx in 0..27 { if (dsp.a_iv[idx] >> 1) != 0 { aig.fanouts_start[dsp.a_iv[idx] >> 1] += 1; }; if (dsp.d_iv[idx] >> 1) != 0 { aig.fanouts_start[dsp.d_iv[idx] >> 1] += 1; }; }
+                for idx in 0..18 { if (dsp.b_iv[idx] >> 1) != 0 { aig.fanouts_start[dsp.b_iv[idx] >> 1] += 1; }; }
+                for idx in 0..48 { if (dsp.c_iv[idx] >> 1) != 0 { aig.fanouts_start[dsp.c_iv[idx] >> 1] += 1; }; }
+                for idx in 0..9 { if (dsp.opmode_iv[idx] >> 1) != 0 { aig.fanouts_start[dsp.opmode_iv[idx] >> 1] += 1; }; }
+                for idx in 0..4 { if (dsp.alumode_iv[idx] >> 1) != 0 { aig.fanouts_start[dsp.alumode_iv[idx] >> 1] += 1; }; }
+                for idx in 0..5 { if (dsp.inmode_iv[idx] >> 1) != 0 { aig.fanouts_start[dsp.inmode_iv[idx] >> 1] += 1; }; }
+                if (dsp.cep_iv >> 1) != 0 { aig.fanouts_start[dsp.cep_iv >> 1] += 1; }
+                if (dsp.rstp_iv >> 1) != 0 { aig.fanouts_start[dsp.rstp_iv >> 1] += 1; }
+            } else if let DriverType::CARRY4(cellid, _) = *driver {
+                let carry = aig.carry4s.get(&cellid).expect("missing CARRY4 descriptor");
+                for idx in 0..4 { if (carry.di_iv[idx] >> 1) != 0 { aig.fanouts_start[carry.di_iv[idx] >> 1] += 1; }; if (carry.s_iv[idx] >> 1) != 0 { aig.fanouts_start[carry.s_iv[idx] >> 1] += 1; }; }
+                if (carry.cin_iv >> 1) != 0 { aig.fanouts_start[carry.cin_iv >> 1] += 1; }
+                if (carry.cyinit_iv >> 1) != 0 { aig.fanouts_start[carry.cyinit_iv >> 1] += 1; }
+            } else if let DriverType::SRLC32E(cellid, _) = *driver {
+                let srlc = aig.srlc32es.get(&cellid).expect("missing SRLC32E descriptor");
+                if (srlc.d_iv >> 1) != 0 { aig.fanouts_start[srlc.d_iv >> 1] += 1; }
+                if (srlc.ce_iv >> 1) != 0 { aig.fanouts_start[srlc.ce_iv >> 1] += 1; }
+                if (srlc.clk_iv >> 1) != 0 { aig.fanouts_start[srlc.clk_iv >> 1] += 1; }
+                for idx in 0..5 { if (srlc.a_iv[idx] >> 1) != 0 { aig.fanouts_start[srlc.a_iv[idx] >> 1] += 1; }; }
             }
         }
         for i in 1..aig.num_aigpins + 2 {
@@ -584,16 +869,30 @@ impl AIG {
         aig.fanouts = vec![0; aig.fanouts_start[aig.num_aigpins + 1]];
         for (i, driver) in aig.drivers.iter().enumerate() {
             if let DriverType::AndGate(a, b) = *driver {
-                if (a >> 1) != 0 {
-                    let st = aig.fanouts_start[a >> 1] - 1;
-                    aig.fanouts_start[a >> 1] = st;
-                    aig.fanouts[st] = i;
-                }
-                if (b >> 1) != 0 {
-                    let st = aig.fanouts_start[b >> 1] - 1;
-                    aig.fanouts_start[b >> 1] = st;
-                    aig.fanouts[st] = i;
-                }
+                if (a >> 1) != 0 { let st = aig.fanouts_start[a >> 1] - 1; aig.fanouts_start[a >> 1] = st; aig.fanouts[st] = i; }
+                if (b >> 1) != 0 { let st = aig.fanouts_start[b >> 1] - 1; aig.fanouts_start[b >> 1] = st; aig.fanouts[st] = i; }
+            } else if let DriverType::DSP(cellid, _) = *driver {
+                let dsp = aig.dsps.get(&cellid).expect("missing DSP descriptor");
+                if (dsp.clk_iv >> 1) != 0 { let st = aig.fanouts_start[dsp.clk_iv >> 1] - 1; aig.fanouts_start[dsp.clk_iv >> 1] = st; aig.fanouts[st] = i; }
+                for idx in 0..27 { if (dsp.a_iv[idx] >> 1) != 0 { let st = aig.fanouts_start[dsp.a_iv[idx] >> 1] - 1; aig.fanouts_start[dsp.a_iv[idx] >> 1] = st; aig.fanouts[st] = i; }; if (dsp.d_iv[idx] >> 1) != 0 { let st = aig.fanouts_start[dsp.d_iv[idx] >> 1] - 1; aig.fanouts_start[dsp.d_iv[idx] >> 1] = st; aig.fanouts[st] = i; }; }
+                for idx in 0..18 { if (dsp.b_iv[idx] >> 1) != 0 { let st = aig.fanouts_start[dsp.b_iv[idx] >> 1] - 1; aig.fanouts_start[dsp.b_iv[idx] >> 1] = st; aig.fanouts[st] = i; }; }
+                for idx in 0..48 { if (dsp.c_iv[idx] >> 1) != 0 { let st = aig.fanouts_start[dsp.c_iv[idx] >> 1] - 1; aig.fanouts_start[dsp.c_iv[idx] >> 1] = st; aig.fanouts[st] = i; }; }
+                for idx in 0..9 { if (dsp.opmode_iv[idx] >> 1) != 0 { let st = aig.fanouts_start[dsp.opmode_iv[idx] >> 1] - 1; aig.fanouts_start[dsp.opmode_iv[idx] >> 1] = st; aig.fanouts[st] = i; }; }
+                for idx in 0..4 { if (dsp.alumode_iv[idx] >> 1) != 0 { let st = aig.fanouts_start[dsp.alumode_iv[idx] >> 1] - 1; aig.fanouts_start[dsp.alumode_iv[idx] >> 1] = st; aig.fanouts[st] = i; }; }
+                for idx in 0..5 { if (dsp.inmode_iv[idx] >> 1) != 0 { let st = aig.fanouts_start[dsp.inmode_iv[idx] >> 1] - 1; aig.fanouts_start[dsp.inmode_iv[idx] >> 1] = st; aig.fanouts[st] = i; }; }
+                if (dsp.cep_iv >> 1) != 0 { let st = aig.fanouts_start[dsp.cep_iv >> 1] - 1; aig.fanouts_start[dsp.cep_iv >> 1] = st; aig.fanouts[st] = i; }
+                if (dsp.rstp_iv >> 1) != 0 { let st = aig.fanouts_start[dsp.rstp_iv >> 1] - 1; aig.fanouts_start[dsp.rstp_iv >> 1] = st; aig.fanouts[st] = i; }
+            } else if let DriverType::CARRY4(cellid, _) = *driver {
+                let carry = aig.carry4s.get(&cellid).expect("missing CARRY4 descriptor");
+                for idx in 0..4 { if (carry.di_iv[idx] >> 1) != 0 { let st = aig.fanouts_start[carry.di_iv[idx] >> 1] - 1; aig.fanouts_start[carry.di_iv[idx] >> 1] = st; aig.fanouts[st] = i; }; if (carry.s_iv[idx] >> 1) != 0 { let st = aig.fanouts_start[carry.s_iv[idx] >> 1] - 1; aig.fanouts_start[carry.s_iv[idx] >> 1] = st; aig.fanouts[st] = i; }; }
+                if (carry.cin_iv >> 1) != 0 { let st = aig.fanouts_start[carry.cin_iv >> 1] - 1; aig.fanouts_start[carry.cin_iv >> 1] = st; aig.fanouts[st] = i; }
+                if (carry.cyinit_iv >> 1) != 0 { let st = aig.fanouts_start[carry.cyinit_iv >> 1] - 1; aig.fanouts_start[carry.cyinit_iv >> 1] = st; aig.fanouts[st] = i; }
+            } else if let DriverType::SRLC32E(cellid, _) = *driver {
+                let srlc = aig.srlc32es.get(&cellid).expect("missing SRLC32E descriptor");
+                if (srlc.d_iv >> 1) != 0 { let st = aig.fanouts_start[srlc.d_iv >> 1] - 1; aig.fanouts_start[srlc.d_iv >> 1] = st; aig.fanouts[st] = i; }
+                if (srlc.ce_iv >> 1) != 0 { let st = aig.fanouts_start[srlc.ce_iv >> 1] - 1; aig.fanouts_start[srlc.ce_iv >> 1] = st; aig.fanouts[st] = i; }
+                if (srlc.clk_iv >> 1) != 0 { let st = aig.fanouts_start[srlc.clk_iv >> 1] - 1; aig.fanouts_start[srlc.clk_iv >> 1] = st; aig.fanouts[st] = i; }
+                for idx in 0..5 { if (srlc.a_iv[idx] >> 1) != 0 { let st = aig.fanouts_start[srlc.a_iv[idx] >> 1] - 1; aig.fanouts_start[srlc.a_iv[idx] >> 1] = st; aig.fanouts[st] = i; }; }
             }
         }
 
@@ -638,18 +937,34 @@ impl AIG {
     }
 
     pub fn num_endpoint_groups(&self) -> usize {
-        self.primary_outputs.len() + self.dffs.len() + self.srams.len()
+        self.primary_outputs.len() + self.dffs.len() + self.srams.len() + self.dsps.len() + self.carry4s.len() + self.srlc32es.len()
     }
 
-    pub fn get_endpoint_group(&self, endpt_id: usize) -> EndpointGroup {
-        if endpt_id < self.primary_outputs.len() {
-            EndpointGroup::PrimaryOutput(*self.primary_outputs.get_index(endpt_id).unwrap())
+    pub fn get_endpoint_group(&self, endpt_id: usize) -> EndpointGroup<'_> {
+        let mut cur = endpt_id;
+        if cur < self.primary_outputs.len() {
+            return EndpointGroup::PrimaryOutput(*self.primary_outputs.get_index(cur).unwrap());
         }
-        else if endpt_id < self.primary_outputs.len() + self.dffs.len() {
-            EndpointGroup::DFF(&self.dffs[endpt_id - self.primary_outputs.len()])
+        cur -= self.primary_outputs.len();
+        if cur < self.dffs.len() {
+            return EndpointGroup::DFF(&self.dffs[cur]);
         }
-        else {
-            EndpointGroup::RAMBlock(&self.srams[endpt_id - self.primary_outputs.len() - self.dffs.len()])
+        cur -= self.dffs.len();
+        if cur < self.srams.len() {
+            return EndpointGroup::RAMBlock(&self.srams[cur]);
         }
+        cur -= self.srams.len();
+        if cur < self.dsps.len() {
+            return EndpointGroup::DSPBlock(&self.dsps[cur]);
+        }
+        cur -= self.dsps.len();
+        if cur < self.carry4s.len() {
+            return EndpointGroup::Carry4Block(&self.carry4s[cur]);
+        }
+        cur -= self.carry4s.len();
+        if cur < self.srlc32es.len() {
+            return EndpointGroup::Srlc32eBlock(&self.srlc32es[cur]);
+        }
+        panic!("endpt_id out of bounds");
     }
 }

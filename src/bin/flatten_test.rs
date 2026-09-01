@@ -84,6 +84,14 @@ fn simulate_block_v1(
         let sram_offset = script[script_pi + 5];
         let num_global_read_rounds = script[script_pi + 6];
         let num_output_duplicates = script[script_pi + 7];
+        let num_dsps = script[script_pi + 8];
+        let num_carry4s = script[script_pi + 9];
+        let num_srlc32es = script[script_pi + 10];
+        let macro_output_words = num_dsps * 2 + num_carry4s + num_srlc32es * 2;
+        let macro_input_words = num_dsps * 5 + num_carry4s + num_srlc32es;
+        let duplicate_start = num_ios - num_srams - num_output_duplicates;
+        let macro_input_start = duplicate_start - macro_input_words;
+        let normal_writeouts = macro_input_start - macro_output_words;
         let mut writeout_hooks = vec![0; 256];
         for i in 0..128 {
             let t = script[script_pi + 128 + i];
@@ -99,7 +107,7 @@ fn simulate_block_v1(
         part_i_dbg += 1;
         // println!("part start");
         assert_eq!(part.stages.len(), num_stages as usize);
-        assert_eq!(part.stages.iter().map(|s| s.write_outs.len()).sum::<usize>(), (num_ios - num_srams - num_output_duplicates) as usize);
+        assert_eq!(part.stages.iter().map(|s| s.write_outs.len()).sum::<usize>(), normal_writeouts as usize);
         script_pi += 256;
         let mut writeouts = vec![0u32; num_ios as usize];
 
@@ -232,9 +240,10 @@ fn simulate_block_v1(
             }
         }
 
-        let mut sram_duplicate_perm = vec![0u32; (num_srams * 4 + num_output_duplicates) as usize];
+        let gather_words = num_srams * 4 + num_output_duplicates + macro_input_words;
+        let mut sram_duplicate_perm = vec![0u32; gather_words as usize];
         for k_outer in 0..4 {
-            for i in 0..(num_srams * 4 + num_output_duplicates) {
+            for i in 0..gather_words {
                 for k_inner in 0..4 {
                     let k = k_outer * 4 + k_inner;
                     let t_shuffle = script[script_pi + (i * 4 + k_inner) as usize];
@@ -246,7 +255,7 @@ fn simulate_block_v1(
             }
             script_pi += 256 * 4;
         }
-        for i in 0..(num_srams * 4 + num_output_duplicates) as usize {
+        for i in 0..gather_words as usize {
             sram_duplicate_perm[i] &= !script[script_pi + i * 4 + 1];
             sram_duplicate_perm[i] ^= script[script_pi + i * 4];
         }
@@ -271,8 +280,73 @@ fn simulate_block_v1(
         }
 
         for i in 0..num_output_duplicates {
-            writeouts[(num_ios - num_srams - num_output_duplicates + i) as usize] =
+            writeouts[(duplicate_start + i) as usize] =
                 sram_duplicate_perm[(num_srams * 4 + i) as usize];
+        }
+
+        for i in 0..macro_input_words {
+            writeouts[(macro_input_start + i) as usize] =
+                sram_duplicate_perm[(num_srams * 4 + num_output_duplicates + i) as usize];
+        }
+
+        use gem::primitive_models::{carry4, decode_dsp_controls, dsp48e2_next,
+                                    srlc32e_step};
+        for i in 0..num_dsps {
+            let start = (macro_input_start + i * 5) as usize;
+            let d0 = writeouts[start];
+            let d1 = writeouts[start + 1];
+            let d2 = writeouts[start + 2];
+            let d3 = writeouts[start + 3];
+            let d4 = writeouts[start + 4];
+            let a = d0 & 0x07ff_ffff;
+            let b = (d0 >> 30) | ((d1 & 0xffff) << 2);
+            let c = u64::from(d1 >> 16) | (u64::from(d2) << 16);
+            let d = d3 & 0x07ff_ffff;
+            let opmode = ((d3 >> 27) | ((d4 & 0xf) << 5)) as u16;
+            let alumode = ((d4 >> 4) & 0xf) as u8;
+            let inmode = ((d4 >> 8) & 0x1f) as u8;
+            let cep = d4 >> 13 & 1 != 0;
+            let rstp = d4 >> 14 & 1 != 0;
+            let out = (normal_writeouts + i * 2) as usize;
+            let previous = u64::from(input_state[io_offset as usize + out])
+                | (u64::from(input_state[io_offset as usize + out + 1]) << 32);
+            let next = if rstp {
+                0
+            } else if !cep {
+                previous
+            } else {
+                let (mode, preadd) = decode_dsp_controls(opmode, alumode, inmode)
+                    .unwrap_or_else(|error| panic!("unsupported DSP controls: {error:?}"));
+                dsp48e2_next(a, b, c, d, previous, mode, preadd)
+            };
+            writeouts[out] = next as u32;
+            writeouts[out + 1] = (next >> 32) as u32;
+        }
+        for i in 0..num_carry4s {
+            let packed = writeouts[(macro_input_start + num_dsps * 5 + i) as usize];
+            let mut di = 0_u8;
+            let mut s = 0_u8;
+            for bit in 0..4 {
+                di |= (((packed >> (bit * 2)) & 1) as u8) << bit;
+                s |= (((packed >> (bit * 2 + 1)) & 1) as u8) << bit;
+            }
+            let result = carry4(s, di, packed >> 8 & 1 != 0, packed >> 9 & 1 != 0);
+            writeouts[(normal_writeouts + num_dsps * 2 + i) as usize] =
+                u32::from(result.o) | (u32::from(result.co) << 4);
+        }
+        for i in 0..num_srlc32es {
+            let packed = writeouts[(macro_input_start + num_dsps * 5 + num_carry4s + i) as usize];
+            let out = (normal_writeouts + num_dsps * 2 + num_carry4s + i * 2) as usize;
+            let current = input_state[io_offset as usize + out + 1];
+            let (outputs, next) = srlc32e_step(
+                current,
+                packed & 1 != 0,
+                packed >> 1 & 1 != 0,
+                packed >> 2 & 1 != 0,
+                ((packed >> 3) & 0x1f) as u8,
+            );
+            writeouts[out] = u32::from(outputs.q) | (u32::from(outputs.q31) << 1);
+            writeouts[out + 1] = next;
         }
 
         let mut clken_perm = vec![0u32; num_ios as usize];
@@ -473,6 +547,7 @@ fn main() {
     ).expect("Specified top scope not found in VCD.");
 
     let mut vcd2inp = HashMap::new();
+    let mut vcd_widths = HashMap::new();
     let mut inp_port_given = HashSet::new();
 
     let mut match_one_input = |var: &Var, i: Option<isize>, vcd_pos: usize| {
@@ -487,6 +562,7 @@ fn main() {
     };
     for scope_item in &top_scope.children[..] {
         if let ScopeItem::Var(var) = scope_item {
+            vcd_widths.insert(var.code.0, var.size as usize);
             use vcd_ng::ReferenceIndex::*;
             match var.index {
                 None => match var.size {
@@ -581,7 +657,7 @@ fn main() {
     writer.begin(SimulationCommand::Dumpvars).unwrap();
 
     // do simulation
-    let mut state = vec![0; script.reg_io_state_size as usize];
+    let mut state = script.initial_reg_io_state.clone();
     let mut sram_storage = vec![0; script.sram_storage_size as usize];
 
     // the simulator keeps 2 previous timestamps.
@@ -669,7 +745,18 @@ fn main() {
                                 },
                                 output_pos @ _ => {
                                     let value_new_output = state[(output_pos >> 5) as usize] >> (output_pos & 31) & 1;
-                                    if aigpin_value_new <= 1 {
+                                    // The legacy debug array is reconstructed from the
+                                    // Boomerang AIG hierarchy.  Heterogeneous macro
+                                    // outputs bypass that hierarchy and are evaluated
+                                    // directly into `state` above, so the array does not
+                                    // constitute an oracle for those drivers.
+                                    let has_aig_debug_oracle = !matches!(
+                                        aig.drivers[output_aigpin >> 1],
+                                        DriverType::DSP(_, _)
+                                            | DriverType::CARRY4(_, _)
+                                            | DriverType::SRLC32E(_, _)
+                                    );
+                                    if has_aig_debug_oracle && aigpin_value_new <= 1 {
                                         assert_eq!(value_new_output, aigpin_value_new, "mismatch value: time {vcd_time} aigpin {output_aigpin} netlist_pin {netlist_pin} ({}) pos {output_pos}", netlistdb.pinnames[netlist_pin].dbg_fmt_pin());
                                     }
                                     value_new_output
@@ -748,7 +835,15 @@ fn main() {
                 }
             },
             FastFlowToken::Value(FFValueChange { id, bits }) => {
-                for (pos, b) in bits.iter().enumerate() {
+                // VCD permits leading zeroes to be omitted from a binary
+                // vector change (for example, a 4-bit 3 may be written as
+                // `b11`). Right-align the payload and explicitly supply the
+                // omitted zeroes; treating payload position zero as the MSB
+                // of the full declaration corrupts changing buses.
+                let width = vcd_widths.get(&id.0).copied().unwrap_or(bits.len());
+                let padding = width.saturating_sub(bits.len());
+                for pos in 0..width {
+                    let b = if pos < padding { b'0' } else { bits[pos - padding] };
                     if let Some(&pin) = vcd2inp.get(
                         &(id.0, pos)
                     ) {

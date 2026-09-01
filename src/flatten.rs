@@ -92,6 +92,8 @@ pub struct FlattenedScriptV1 {
     ///
     /// the inputs are always at front.
     pub reg_io_state_size: u32,
+    /// Initial persistent state, including SRLC32E INIT values.
+    pub initial_reg_io_state: Vec<u32>,
     /// the u32 array length for storing SRAMs.
     pub sram_storage_size: u32,
     /// expected input AIG pins layout
@@ -168,12 +170,17 @@ struct FlatteningPart {
     after_writeout_pin2pos: IndexMap<usize, u16>,
     /// the number of SRAMs to simulate in this part.
     num_srams: u32,
+    num_dsps: u32,
+    num_carry4s: u32,
+    num_srlc32es: u32,
     /// number of normal writeouts
     num_normal_writeouts: u32,
     /// number of writeout slots for output duplication
     num_duplicate_writeouts: u32,
     /// number of total writeouts
     num_writeouts: u32,
+    /// `(local word offset, value)` initializers for persistent state.
+    initial_state_words: Vec<(u32, u32)>,
     /// the outputs categorized into activations
     comb_outputs_activations: IndexMap<usize, IndexMap<usize, Option<u16>>>,
     /// the current (placed) count of duplicate permutes
@@ -273,6 +280,9 @@ impl FlatteningPart {
                             dff.en_iv << 1 | (dff.d_iv & 1),
                             None);
                 },
+                EndpointGroup::DSPBlock(_) => { self.num_dsps += 1; },
+                EndpointGroup::Carry4Block(_) => { self.num_carry4s += 1; },
+                EndpointGroup::Srlc32eBlock(_) => { self.num_srlc32es += 1; }
             }
         }
         self.num_duplicate_writeouts = ((
@@ -281,7 +291,18 @@ impl FlatteningPart {
                 + 31) / 32) as u32;
         self.comb_outputs_activations = comb_outputs_activations;
 
-        self.num_writeouts = self.num_normal_writeouts + self.num_srams + self.num_duplicate_writeouts;
+        // M-01/M-02 fix: macro *input* operand words (the packed A/B/C/D/
+        // OPMODE/ALUMODE etc. gathered every cycle for the macro evaluator
+        // to read) need their own reserved slots in the local
+        // shared_writeouts layout, exactly like macro outputs, SRAM
+        // read-data, and output-activation duplicates already do. Before
+        // this fix num_writeouts (== num_ios on the CUDA side) never
+        // accounted for them at all, so the kernel's macro evaluator ended
+        // up reading out of the output-activation-duplicate region instead
+        // of a region anyone ever wrote real gathered data into (see the
+        // matching kernel_v1_impl.cuh changes for the other half of this).
+        let num_macro_input_words = self.num_dsps * 5 + self.num_carry4s + self.num_srlc32es;
+        self.num_writeouts = self.num_normal_writeouts + self.num_srams + self.num_dsps * 2 + self.num_carry4s + self.num_srlc32es * 2 + num_macro_input_words + self.num_duplicate_writeouts;
 
         self.after_writeout_pin2pos = self.parts_after_writeouts.iter().enumerate()
             .filter_map(|(i, &pin)| {
@@ -386,7 +407,7 @@ impl FlatteningPart {
         self.data_inv = vec![0u32; NUM_THREADS_V1];
         self.cnt_placed_duplicate_permute = 0;
 
-        let mut cur_sram_id = 0;
+        let mut cur_sram_id = 0; let mut cur_dsp_id = 0; let mut cur_carry4_id = 0; let mut cur_srlc32e_id = 0;
         for &endpt_i in &part.endpoints {
             match staged.get_endpoint_group(aig, endpt_i) {
                 EndpointGroup::RAMBlock(ram) => {
@@ -409,6 +430,8 @@ impl FlatteningPart {
                             sram_input_perm_st + k,
                             self.query_permute_with_pin_iv(ram.port_r_addr_iv[k])
                         );
+                    }
+                    for k in 0..13 {
                         self.place_sram_duplicate(
                             sram_input_perm_st + 16 + k,
                             self.query_permute_with_pin_iv(ram.port_w_addr_iv[k])
@@ -425,6 +448,155 @@ impl FlatteningPart {
                         );
                     }
                     cur_sram_id += 1;
+                },
+                EndpointGroup::DSPBlock(dsp) => {
+                    // M-02 fix: this permutation-space region used to start
+                    // right at num_srams*4, which is exactly where the
+                    // output-activation-duplicate permutation words also
+                    // get placed (see get_or_place_output_with_activation's
+                    // dup_perm_pos, anchored at (num_srams*4+
+                    // num_duplicate_writeouts)*32 counting backwards). The
+                    // two regions silently aliased whenever a part had both
+                    // duplicated outputs and a macro. Shifting the macro
+                    // region to start after num_duplicate_writeouts makes
+                    // them disjoint; num_duplicate_writeouts is already
+                    // known at this point (computed in init_afters_writeouts
+                    // before this pass runs).
+                    let macro_perm_base = self.num_srams * 32 * 4 + self.num_duplicate_writeouts * 32;
+                    let st = (macro_perm_base + cur_dsp_id * 32 * 5) as usize;
+                    let mut placed = 0;
+                    let mut place = |p_iv| { self.place_sram_duplicate(st + placed, self.query_permute_with_pin_iv(p_iv)); placed += 1; };
+                    for k in 0..30 { if k < 27 { place(dsp.a_iv[k]); } else { place(0); } }
+                    for k in 0..18 { place(dsp.b_iv[k]); }
+                    for k in 0..48 { place(dsp.c_iv[k]); }
+                    for k in 0..27 { place(dsp.d_iv[k]); }
+                    for k in 0..9 { place(dsp.opmode_iv[k]); }
+                    for k in 0..4 { place(dsp.alumode_iv[k]); }
+                    for k in 0..5 { place(dsp.inmode_iv[k]); }
+                    place(dsp.cep_iv);
+                    place(dsp.rstp_iv);
+                    let dsp_output_start = self.num_normal_writeouts + (cur_dsp_id * 2) as u32;
+                    // M-03 fix: PREG is DSP48E2's only clocked register
+                    // (P-06/D-06). Gate its commit on the macro's own
+                    // resolved clock edge (dsp.clk_iv, now populated by the
+                    // F-01/F-02 fixes in aig.rs) exactly like a DFF gates
+                    // its D commit on en_iv -- previously nothing ever
+                    // called place_clken_datainv for this position, so it
+                    // kept clken_set0's all-ones default ("always tied to
+                    // the constant 0/never write"), meaning a correctly
+                    // computed P was discarded every single cycle.
+                    let (clk_perm, clk_inv, clk_set0) = self.query_permute_with_pin_iv(dsp.clk_iv);
+                    let mut k = 0;
+                    for &p in &dsp.p_out {
+                        // 2nd-audit M-01 fix: input_map/output_map are shared
+                        // across every partition in the whole design (declared
+                        // once, outside the per-part loop), and record GLOBAL
+                        // bit positions into the input_state/output_state
+                        // arrays -- every other endpoint type (DFF/
+                        // PrimaryOutput/RAM below) adds self.state_start * 32
+                        // for exactly this reason. This local_offset was
+                        // inserted bare, so for any partition other than the
+                        // one with state_start == 0, a gate elsewhere reading
+                        // this DSP's P bit as one of its own inputs would look
+                        // it up at the wrong global address.
+                        // place_clken_datainv, in contrast, indexes this
+                        // partition's own local clken_permute/_inv/_set0
+                        // arrays (fixed capacity, not a global array), so it
+                        // must keep using the local (non-state_start) offset.
+                        let local_offset = dsp_output_start * 32 + k;
+                        let global_offset = self.state_start * 32 + local_offset;
+                        input_map.insert(p, global_offset);
+                        output_map.insert(p << 1, global_offset);
+                        self.place_clken_datainv(local_offset as usize, clk_perm, clk_inv, clk_set0, 0);
+                        k += 1;
+                    }
+                    cur_dsp_id += 1;
+                },
+                EndpointGroup::Carry4Block(carry4) => {
+                    let macro_perm_base = self.num_srams * 32 * 4 + self.num_duplicate_writeouts * 32 + self.num_dsps * 32 * 5;
+                    let st = (macro_perm_base + cur_carry4_id * 32) as usize;
+                    let mut placed = 0;
+                    let mut place = |p_iv| { self.place_sram_duplicate(st + placed, self.query_permute_with_pin_iv(p_iv)); placed += 1; };
+                    for k in 0..4 { place(carry4.di_iv[k]); place(carry4.s_iv[k]); }
+                    place(carry4.cin_iv); place(carry4.cyinit_iv);
+                    let carry4_output_start = self.num_normal_writeouts + (self.num_dsps * 2 + cur_carry4_id) as u32;
+                    // M-03 fix: CARRY4 is purely combinational (no clock at
+                    // all), so its output should always be written every
+                    // evaluation -- the same "always true" tie used for
+                    // PrimaryOutput (get_or_place_output_with_activation(_,
+                    // 1) elsewhere): query_permute_with_pin_iv(1) resolves
+                    // to a constant-true clken source.
+                    let (always_perm, always_inv, always_set0) = self.query_permute_with_pin_iv(1);
+                    let mut k = 0;
+                    for &o in &carry4.o_out {
+                        // 2nd-audit M-01 fix: see the identical comment on the
+                        // DSP arm above -- global offset for the cross-
+                        // partition maps, local offset for the commit mask.
+                        let local_offset = carry4_output_start * 32 + k;
+                        let global_offset = self.state_start * 32 + local_offset;
+                        input_map.insert(o, global_offset);
+                        output_map.insert(o << 1, global_offset);
+                        self.place_clken_datainv(local_offset as usize, always_perm, always_inv, always_set0, 0);
+                        k += 1;
+                    }
+                    for &co in &carry4.co_out {
+                        let local_offset = carry4_output_start * 32 + k;
+                        let global_offset = self.state_start * 32 + local_offset;
+                        input_map.insert(co, global_offset);
+                        output_map.insert(co << 1, global_offset);
+                        self.place_clken_datainv(local_offset as usize, always_perm, always_inv, always_set0, 0);
+                        k += 1;
+                    }
+                    cur_carry4_id += 1;
+                },
+                EndpointGroup::Srlc32eBlock(srlc32e) => {
+                    let macro_perm_base = self.num_srams * 32 * 4 + self.num_duplicate_writeouts * 32 + self.num_dsps * 32 * 5 + self.num_carry4s * 32;
+                    let st = (macro_perm_base + cur_srlc32e_id * 32) as usize;
+                    let mut placed = 0;
+                    let mut place = |p_iv| { self.place_sram_duplicate(st + placed, self.query_permute_with_pin_iv(p_iv)); placed += 1; };
+                    place(srlc32e.d_iv); place(srlc32e.ce_iv); place(srlc32e.clk_iv);
+                    for k in 0..5 { place(srlc32e.a_iv[k]); }
+                    let srlc32e_output_start = self.num_normal_writeouts + (self.num_dsps * 2 + self.num_carry4s + cur_srlc32e_id * 2) as u32;
+                    self.initial_state_words.push((srlc32e_output_start + 1, srlc32e.init));
+                    // Q and Q31 are asynchronous reads of the storage at A.
+                    // On an active edge the evaluator first shifts storage,
+                    // then lets these taps settle to the updated value in the
+                    // same HDL timestamp. Only the internal 32-bit shift
+                    // register's persistent commit is clock-gated. A previous
+                    // version gated the Q/
+                    // Q31 word itself on the resolved clock edge, which is
+                    // wrong: on a cycle with no active edge, an address change
+                    // would not be reflected in Q at all, making it behave
+                    // like a registered output instead of a combinational one.
+                    // Q/Q31 now use the same "always write" constant-true
+                    // source as CARRY4's purely-combinational output; only the
+                    // internal state word (word offset +1) stays gated by the
+                    // resolved clock edge (srlc32e.clk_iv), which is what
+                    // csrc/kernel_v1_impl.cuh reads back as current_state.
+                    let (always_perm, always_inv, always_set0) = self.query_permute_with_pin_iv(1);
+                    let (clk_perm, clk_inv, clk_set0) = self.query_permute_with_pin_iv(srlc32e.clk_iv);
+                    // 2nd-audit M-01 fix: global offset for the cross-
+                    // partition maps, local offset for the commit masks --
+                    // same reasoning as the DSP/CARRY4 arms above.
+                    let q_local = srlc32e_output_start * 32;
+                    let q31_local = srlc32e_output_start * 32 + 1;
+                    input_map.insert(srlc32e.q_out, self.state_start * 32 + q_local);
+                    output_map.insert(srlc32e.q_out << 1, self.state_start * 32 + q_local);
+                    input_map.insert(srlc32e.q31_out, self.state_start * 32 + q31_local);
+                    output_map.insert(srlc32e.q31_out << 1, self.state_start * 32 + q31_local);
+                    self.place_clken_datainv(q_local as usize, always_perm, always_inv, always_set0, 0);
+                    self.place_clken_datainv(q31_local as usize, always_perm, always_inv, always_set0, 0);
+                    // the internal shift-register state word (+1 relative
+                    // to this output word, see dsp/carry4/srlc32e word
+                    // layout in kernel_v1_impl.cuh) is a full 32-bit value,
+                    // not a single flag -- every one of its 32 bit
+                    // positions needs the same clock gate, or only bit 0
+                    // would ever be allowed to update and the shifted-in
+                    // history in bits 1..31 would never commit.
+                    for k in 0..32 {
+                        self.place_clken_datainv(((srlc32e_output_start + 1) * 32 + k) as usize, clk_perm, clk_inv, clk_set0, 0);
+                    }
+                    cur_srlc32e_id += 1;
                 },
                 EndpointGroup::PrimaryOutput(idx_iv) => {
                     if idx_iv == 0 {
@@ -456,9 +628,10 @@ impl FlatteningPart {
                     output_map.insert(dff.d_iv, pos);
                     input_map.insert(dff.q, pos);
                 },
+
             }
         }
-        assert_eq!(cur_sram_id, self.num_srams);
+        assert_eq!(cur_sram_id, self.num_srams); assert_eq!(cur_dsp_id, self.num_dsps); assert_eq!(cur_carry4_id, self.num_carry4s); assert_eq!(cur_srlc32e_id, self.num_srlc32es);
         assert_eq!((self.cnt_placed_duplicate_permute + 31) / 32, self.num_duplicate_writeouts);
 
         // println!("test clken_permute: {:?}, wos (w/o sram or dup): {:?}", self.clken_permute, self.parts_after_writeouts);
@@ -480,6 +653,9 @@ impl FlatteningPart {
         script.push(self.sram_start);
         script.push(0);   // [6]=num global read rounds, assigned later
         script.push(self.num_duplicate_writeouts);
+        script.push(self.num_dsps);
+        script.push(self.num_carry4s);
+        script.push(self.num_srlc32es);
         // padding
         while script.len() < 128 {
             script.push(0);
@@ -828,6 +1004,15 @@ fn build_flattened_script_v1(
     blocks_start.push(blocks_data.len());
     blocks_data.extend((0..NUM_THREADS_V1 * 8).map(|_| 0)); // padding
 
+    let mut initial_reg_io_state = vec![0_u32; sum_state_start as usize];
+    for stage_parts in &stages_flattening_parts {
+        for part in stage_parts {
+            for &(local_word, value) in &part.initial_state_words {
+                initial_reg_io_state[(part.state_start + local_word) as usize] = value;
+            }
+        }
+    }
+
     clilog::info!("Built script for {} blocks, reg/io state size {}, sram size {}, script size {}",
                   num_blocks, sum_state_start, sum_srams_start, blocks_data.len());
 
@@ -837,6 +1022,7 @@ fn build_flattened_script_v1(
         blocks_start: blocks_start.into(),
         blocks_data: blocks_data.into(),
         reg_io_state_size: sum_state_start,
+        initial_reg_io_state,
         sram_storage_size: sum_srams_start,
         input_layout,
         input_map,

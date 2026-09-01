@@ -60,6 +60,31 @@ impl LeafPinProvider for AIGPDKLeafPins {
              "PORT_R_RD_DATA",
              Some(0..=31)) => Direction::O,
 
+            ("DSP48E2", _, _) => {
+                let pin_str = pin_name.as_str();
+                if pin_str == "P" {
+                    Direction::O
+                } else {
+                    Direction::I
+                }
+            }
+            ("CARRY4", _, _) => {
+                let pin_str = pin_name.as_str();
+                if pin_str == "O" || pin_str == "CO" {
+                    Direction::O
+                } else {
+                    Direction::I
+                }
+            }
+            ("SRLC32E", _, _) => {
+                let pin_str = pin_name.as_str();
+                if pin_str == "Q" || pin_str == "Q31" {
+                    Direction::O
+                } else {
+                    Direction::I
+                }
+            }
+
             _ => {
                 use netlistdb::{GeneralPinName, HierName};
                 panic!("Cannot recognize pin type {}, please make sure the verilog netlist is synthesized in GEM's aigpdk.",
@@ -88,6 +113,18 @@ impl LeafPinProvider for AIGPDKLeafPins {
             ("$__RAMGEM_SYNC_",
              "PORT_W_WR_EN" | "PORT_W_WR_DATA" | "PORT_R_RD_DATA")
                 => Some(SVerilogRange(31, 0)),
+
+            ("DSP48E2", "A" | "D") => Some(SVerilogRange(26, 0)),
+            ("DSP48E2", "B") => Some(SVerilogRange(17, 0)),
+            ("DSP48E2", "C" | "P") => Some(SVerilogRange(47, 0)),
+            ("DSP48E2", "OPMODE") => Some(SVerilogRange(8, 0)),
+            ("DSP48E2", "ALUMODE") => Some(SVerilogRange(3, 0)),
+            ("DSP48E2", "INMODE") => Some(SVerilogRange(4, 0)),
+
+            ("CARRY4", "DI" | "S" | "O" | "CO") => Some(SVerilogRange(3, 0)),
+
+            ("SRLC32E", "A") => Some(SVerilogRange(4, 0)),
+
             _ => None
         }
     }
