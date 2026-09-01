@@ -27,7 +27,7 @@ pub use bytemuck::Zeroable;
 
 /// The derive macro for zeroable types.
 /// see [original docs online](https://docs.rs/zeroable/latest/zeroable/zeroable_docs/index.html).
-/// 
+///
 pub use ulib_zeroable_derive::Zeroable;
 
 #[cfg(feature = "cuda")]
@@ -82,7 +82,7 @@ impl Device {
             }
         }
     }
-    
+
     #[inline]
     fn from_id(id: usize) -> Device {
         use Device::*;
@@ -137,7 +137,7 @@ impl Device {
 ///
 /// ```
 /// use ulib::UniversalCopy;
-/// 
+///
 /// #[derive(UniversalCopy, Clone)]
 /// struct Test {
 ///     a: i32,
@@ -157,7 +157,7 @@ impl<T: Copy + DeviceCopy> UniversalCopy for T { }
 ///
 /// ```
 /// use ulib::UniversalCopy;
-/// 
+///
 /// #[derive(UniversalCopy, Clone)]
 /// struct Test {
 ///     a: i32,
@@ -193,7 +193,7 @@ lazy_static! {
         }
         ret
     };
-    
+
     /// the number of CUDA devices.
     pub static ref NUM_CUDA_DEVICES: usize = CUDA_DEVICES.len();
 }

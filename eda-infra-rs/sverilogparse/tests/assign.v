@@ -3,7 +3,7 @@
 // previously, input/output and vector widths are specified directly
 // in defs, and here we moved them to body. -- because PT also
 // does not support such syntax.
-// 
+//
 module xyz (x,		// x is a 4-bit vector net
 						y, 		// y is a scalar net (1-bit)
 						z ); 	// z is a 5-bit vector net

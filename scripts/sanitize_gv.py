@@ -32,17 +32,17 @@ def sanitize_gv(filepath):
                 paren_depth -= 1
                 if paren_depth == 0:
                     in_param = False
-                    
+
                     # Find the instance name that follows this parameter block
                     j = i + 1
                     while j < len(content) and content[j].isspace():
                         j += 1
-                    
+
                     inst_name_start = j
                     while j < len(content) and not content[j].isspace() and content[j] != "(":
                         j += 1
                     inst_name = content[inst_name_start:j]
-                    
+
                     # Parse the parameters from the buffer: .KEY(VALUE)
                     parsed_params = {}
                     for match in re.finditer(r'\.\s*([A-Za-z0-9_]+)\s*\(\s*(.*?)\s*\)', param_buffer):
@@ -52,7 +52,7 @@ def sanitize_gv(filepath):
                         if val.startswith('"') and val.endswith('"'):
                             val = val[1:-1]
                         parsed_params[key] = val
-                        
+
                     params_dict[inst_name] = parsed_params
             i += 1
 

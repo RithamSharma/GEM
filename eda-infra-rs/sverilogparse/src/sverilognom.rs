@@ -266,7 +266,7 @@ fn cell(i: &[u8]) -> IResult<&[u8], SVerilogCell> {
                 ws(char('.')), ident,
                 ws(char('(')), opt(wirexpr), ws(char(')'))
             )), |(_, name, _, expr, _)| {
-                expr.map(|e| (name, e)) 
+                expr.map(|e| (name, e))
             })
         )), pair(ws(char(')')), ws(char(';'))))
     )), |(macro_name, cell_name, ioports)| SVerilogCell {

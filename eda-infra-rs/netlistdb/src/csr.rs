@@ -47,7 +47,7 @@ impl VecCSR {
         let r = self.start[set_id + 1];
         self.items[l..r].iter().copied()
     }
-    
+
     /// get size of a set
     #[inline]
     pub fn len(&self, set_id: usize) -> usize {

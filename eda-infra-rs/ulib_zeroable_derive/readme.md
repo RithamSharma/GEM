@@ -7,7 +7,7 @@
 
 
 
-Provides a derive macro for 
+Provides a derive macro for
 [`bytemuck::Zeroable`](https://docs.rs/bytemuck/1/bytemuck/trait.Zeroable.html).
 
 # Derive Documentation
@@ -112,5 +112,3 @@ The changelog is in the "Changelog.md" file.
 # Minimum Rust version
 
 This crate support Rust back to 1.34.
-
-

@@ -2,7 +2,7 @@
 //! Copyright (C) 2019, PhilipDaniels, MIT License
 //!
 //! It is modified by introducing crate-based filters.
-//! 
+//!
 //! This crate provides a couple of simple timers that log messages indicating the elapsed
 //! time between their creation and dropping. Messages are output via the
 //! [log](https://crates.io/crates/log) crate.

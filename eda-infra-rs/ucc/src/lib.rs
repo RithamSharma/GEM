@@ -13,7 +13,7 @@
 //!
 //! * Compile C++(OpenMP)/CUDA sources with out-of-the-box
 //!   compilation settings and common platform detections.
-//!   
+//!
 //! * Generates bindings of C++/CUDA host functions
 //!   making use of `ulib::UVec`, through [`bindgen()`].
 //!

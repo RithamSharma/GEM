@@ -5,7 +5,7 @@ use compact_str::CompactString;
 #[test]
 fn simple() {
     clilog::init_stdout_simple_trace();
-    
+
     let verilog = fs::read_to_string(
         concat!(env!("CARGO_MANIFEST_DIR"), "/tests/simple.v")
     ).expect("unable to read simple.v");
@@ -20,11 +20,11 @@ fn simple() {
             _ => I,
         }
     };
-    
+
     let db: NetlistDB = NetlistDB::from_sverilog_source(
         &verilog, None, &directions
     ).unwrap();
-    
+
     println!("The database: {db:#?}");
     assert_eq!(db.num_cells, 4);
     assert_eq!(db.num_pins, 12);

@@ -4,7 +4,7 @@ This is the changelog,summarising changes in each version(some minor changes may
 
 - Changed `Zeroable` to require union fields to be `Zeroable` by default.
 
-- Added `#[zero(nonzero)]` and `#[zero(nonzero_fields)]` attributes to opt out 
+- Added `#[zero(nonzero)]` and `#[zero(nonzero_fields)]` attributes to opt out
 of requiring Zeroable for a union field.
 
 - Improved error messages when a field's type doesn't implement Zeroable.
@@ -22,4 +22,3 @@ and for improving the "doesn't implement Zeroable" error messages.
 - Defined the `Zeroable` derive macro.
 
 - Defined the `AssertZeroable` type.
-

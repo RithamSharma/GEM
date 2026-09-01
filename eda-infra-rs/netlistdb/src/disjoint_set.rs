@@ -3,7 +3,7 @@
 /// A simple implementation of a union-find set (disjoint set).
 /// We extend it with the ability to track two special sets:
 /// Net-0 and Net-1.
-/// 
+///
 /// It is expected to run in `O(log n)` time, because we do not
 /// use *union by size/rank* trick to optimize it -- this is
 /// hopefully because nets are small.
@@ -102,8 +102,7 @@ impl DisjointSet {
             clilog::error!(NL_SV_LIT, "Constant zero and one connected");
             return None
         }
-        
+
         Some((num_sets, set_indices, id_zero, id_one))
     }
 }
-

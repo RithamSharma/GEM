@@ -308,7 +308,7 @@ impl NetlistDB {
                 }
             }
         }
-        
+
         // connect assignments
         for assign in &m.assigns {
             let len_lhs = mm.eval_expr_len(&assign.lhs);
@@ -354,7 +354,7 @@ impl NetlistDB {
     /// Building a netlist database STEP 1: initialize most of the
     /// graph structure using parsed verilog modules starting from
     /// the top-level module.
-    /// 
+    ///
     /// The only remaining thing to do is to assign pin directions.
     ///
     /// Splitting this out would possibly reduce the code bloat
@@ -377,7 +377,7 @@ impl NetlistDB {
             num_pins: 0,
             num_logic_pins: 0,
             num_nets: 0,
-            cellname2id: HashMap::with_capacity(est_num_cells), 
+            cellname2id: HashMap::with_capacity(est_num_cells),
             logicpinname2id: HashMap::with_capacity(est_num_logic_pins),
             pinname2id: HashMap::new(),
             netname2id: HashMap::new(),
@@ -579,7 +579,7 @@ impl NetlistDB {
                 ret_portname2pinid = Some(portname2pinid);
             });
         });
-        
+
         db.pinname2id = ret_pinname2id.unwrap();
         db.pin2cell = ret_pin2cell.unwrap();
         db.cell2pin = ret_cell2pin.unwrap();
@@ -591,12 +591,12 @@ impl NetlistDB {
         db.portname2pinid = ret_portname2pinid.unwrap();
 
         clilog::finish!(time_build_public_maps);
-        
+
         Some(db)
     }
 
     /// Build a database from a parsed structural verilog object.
-    /// 
+    ///
     /// The top module to be built from can be optionally specified through
     /// the `top` parameter.
     ///
@@ -608,15 +608,15 @@ impl NetlistDB {
         direction_provider: &impl DirectionProvider
     ) -> Option<NetlistDB> {
         let SVerilog{modules} = sverilog_source;
-        
+
         let modules: HashMap<CompactString, (SVerilogModule, ModuleMap)> =
             modules.into_iter().map(|(k, v)| {
                 let mm = ModuleMap::from(&v);
                 (k, (v, mm))
             }).collect();
-        
+
         let (top_name, top_m, top_mm) = find_top_module(&modules, top)?;
-        
+
         let mut db = NetlistDB::init_graph_from_modules(
             &modules,
             (top_name, top_m, top_mm),
@@ -624,7 +624,7 @@ impl NetlistDB {
         )?;
 
         db.assign_direction((top_name, top_m, top_mm), direction_provider)?;
-        
+
         Some(db)
     }
 

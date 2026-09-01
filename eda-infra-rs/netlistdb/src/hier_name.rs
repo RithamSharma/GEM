@@ -46,10 +46,10 @@ impl<'i> IntoIterator for &'i HierName {
 }
 
 /// Hashing a HierName.
-/// 
+///
 /// Our guarantee here is that
 /// `Hash(HierName[a/b/c]) :== Hash(c, b, a)`.
-/// 
+///
 /// This is essential for different HierName implementations
 /// to agree with each other on hash values.
 /// One can find a tricky example in SPEF parser's HierName.
@@ -152,7 +152,7 @@ fn test_hier_name() {
 /// We use this to unify netlistdb::HierName and other
 /// implementations, such as
 /// spefparse::HierName, sdfparse::SDFPath, etc.
-/// 
+///
 /// See a great post on this:
 /// <https://stackoverflow.com/questions/45786717/how-to-implement-hashmap-with-two-keys>
 pub trait GeneralHierName {
@@ -187,7 +187,7 @@ impl Hash for dyn GeneralHierName + '_ {
 
 // Below won't work because it trips over the orphan rule.
 // See this answer: https://stackoverflow.com/a/63131661/11815215
-// 
+//
 // impl<T: GeneralHierName> std::borrow::Borrow<dyn GeneralHierName> for T {
 //     #[inline]
 //     fn borrow(&self) -> &dyn GeneralHierName {

@@ -52,7 +52,7 @@ fn impl_universal_copy(input: &DeriveInput) -> TokenStream {
     };
     #[cfg(not(feature = "cuda"))]
     let impl_cuda = quote! {};
-    
+
     #[cfg(feature = "cuda")]
     let trait_bounds = quote! {
         ::std::marker::Copy + ::ulib::cust::memory::DeviceCopy
@@ -61,7 +61,7 @@ fn impl_universal_copy(input: &DeriveInput) -> TokenStream {
     let trait_bounds = quote! {
         ::std::marker::Copy
     };
-    
+
     let generated_code = quote! {
         impl #impl_generics ::std::marker::Copy for #input_type #type_generics #where_clause {}
         #impl_cuda

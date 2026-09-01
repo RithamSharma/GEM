@@ -53,7 +53,7 @@ fn parse_insert_fns(source: &str, fns: &mut Vec<FnSig>) -> Option<()> {
         .expect("Error loading CPP grammar");
     let parsed = parser.parse(source, None)?;
     let cpp = parsed.root_node();
-    
+
     for node in cpp.children(&mut cpp.walk()) {
         macro_rules! skip_ifn {
             ($v:expr) => { if !$v { continue } }
@@ -61,7 +61,7 @@ fn parse_insert_fns(source: &str, fns: &mut Vec<FnSig>) -> Option<()> {
         skip_ifn!(node.kind() == "linkage_specification");
         skip_ifn!(&source[node.child_by_field_name("value")?
                           .byte_range()] == "\"C\"");
-        
+
         let node = node.child_by_field_name("body")?;
         skip_ifn!(node.kind() == "function_definition");
         skip_ifn!(&source[node.child_by_field_name("type")?
@@ -71,7 +71,7 @@ fn parse_insert_fns(source: &str, fns: &mut Vec<FnSig>) -> Option<()> {
         let raw_name = String::from(
             &source[node.child_by_field_name("declarator")?.byte_range()]
         );
-        
+
         let params = node.child_by_field_name("parameters")?;
         let (param_names, param_types) = params.children(&mut params.walk()).filter_map(|param| {
             macro_rules! skip_ifn {
@@ -118,7 +118,7 @@ fn parse_insert_fns(source: &str, fns: &mut Vec<FnSig>) -> Option<()> {
             let name = String::from(&source[name]);
             Some((name, (fnparam, typ)))
         }).unzip();
-        
+
         fns.push(FnSig {
             raw_name, param_names, param_types
         })
@@ -129,7 +129,7 @@ fn parse_insert_fns(source: &str, fns: &mut Vec<FnSig>) -> Option<()> {
 /// Generate universal bindings for `export "C"` functions inside a
 /// specified c++/cuda source, and write that binding to a Rust source
 /// under `OUT_DIR/uccbind`.
-/// 
+///
 /// Usage:
 /// ```no_run
 /// ucc::bindgen(["csrc/source.cpp"], "source.rs");
@@ -174,7 +174,7 @@ pub fn bindgen(source_list: impl IntoIterator<Item = impl AsRef<Path>>,
             })
             .collect()
     }
-    
+
     let ffis = fns.iter().map(|f| {
         let fname = format_ident!("{}", f.raw_name);
         let params = format_params(f, |p, typname, t| match t {
@@ -188,7 +188,7 @@ pub fn bindgen(source_list: impl IntoIterator<Item = impl AsRef<Path>>,
             pub fn #fname(#(#params),*);
         }
     });
-    
+
     let mut funcdefs = vec![];
     for f in &fns {
         // build raw cpu-only bindings.
@@ -213,7 +213,7 @@ pub fn bindgen(source_list: impl IntoIterator<Item = impl AsRef<Path>>,
             });
         }
     }
-    
+
     #[cfg(feature = "ulib")]
     let mut ufuncs: IndexMap<&str, Vec<&FnSig>>
         = IndexMap::new();
@@ -242,7 +242,7 @@ pub fn bindgen(source_list: impl IntoIterator<Item = impl AsRef<Path>>,
                      .collect::<Vec<_>>());
             continue;
         }
-        
+
         let fname = format_ident!("{}", uf);
         let params = format_params(f0, |p, typname, t| match t {
             Scalar => quote!{ #p: #typname },
@@ -256,7 +256,7 @@ pub fn bindgen(source_list: impl IntoIterator<Item = impl AsRef<Path>>,
             ConstList | ConstListArray(_) => quote!{ #p.as_uptr(device) },
             MutList | MutListArray(_) => quote!{ #p.as_mut_uptr(device) },
         });
-        
+
         let devs = impls.iter().map(|f| {
             let fname = format_ident!("{}", f.raw_name);
             if f.raw_name.ends_with("_cpu") {
@@ -276,7 +276,7 @@ pub fn bindgen(source_list: impl IntoIterator<Item = impl AsRef<Path>>,
             }
             else { unreachable!("{}", f.raw_name) }
         });
-        
+
         funcdefs.push(quote!{
             pub fn #fname(#(#params,)* device: ulib::Device) {
                 match device {
@@ -286,7 +286,7 @@ pub fn bindgen(source_list: impl IntoIterator<Item = impl AsRef<Path>>,
             }
         });
     }
-    
+
     let binds = quote!{
         #[allow(unused_imports)]
         use super::*; // import types

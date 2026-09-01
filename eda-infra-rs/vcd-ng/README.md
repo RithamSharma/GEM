@@ -8,7 +8,7 @@ This is a fork of [rust-vcd](https://github.com/kevinmehall/rust-vcd) that does 
 
 * `CompactString` and `BitVec` are used to represent strings and bits in the original API.
 
-By experiments, `FastFlow` is very fast, but lacks some compatibility with ill-indented file and bad-formed whitespaces. 
+By experiments, `FastFlow` is very fast, but lacks some compatibility with ill-indented file and bad-formed whitespaces.
 `BitVec` actually slows down the program if there are many 1-bit signals.
 Please benchmark before you use.
 

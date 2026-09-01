@@ -1,4 +1,4 @@
-/* 
+/*
  * Zenith Macros for Big-GEM Theory
  * These stubs are used to define the pin directions and widths for Yosys and netlistdb.
  * Yosys will see these as blackboxes during the techmap pass, preventing them from being flattened.

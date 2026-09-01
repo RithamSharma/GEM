@@ -1,7 +1,7 @@
 //! An inclusive range implementation for verilog.
 
 /// An inclusive range in verilog.
-/// 
+///
 /// The direction is inferred from the relation between two ends.
 /// As the pair of sizes cannot represent *empty*, we use
 /// [`isize::MAX`]:[`isize::MAX`] to represent an empty range.

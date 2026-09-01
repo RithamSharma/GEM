@@ -5,7 +5,7 @@ use itertools::Itertools;
 #[test]
 fn not_simple() {
     clilog::init_stdout_simple_trace();
-    
+
     let directions = |r#macro: &CompactString, pin: &CompactString, pinwidth: Option<isize>| {
         assert_eq!(pinwidth, None);
         use Direction::*;
@@ -15,12 +15,12 @@ fn not_simple() {
             _ => Unknown
         }
     };
-    
+
     let db: NetlistDB = NetlistDB::from_sverilog_file(
         concat!(env!("CARGO_MANIFEST_DIR"), "/tests/notsimple.v"),
         None, &directions
     ).unwrap();
-    
+
     println!("The database: {db:?}");
     assert_eq!(db.num_cells, 9);
     assert_eq!(db.num_pins, 24);
@@ -51,7 +51,7 @@ fn not_simple() {
     use Direction::*;
     assert_eq!(db.pindirect, vec![O, O, I, O, I, I, O, I, I, O, I, O, I, O, I, O, I, O, I, I, O, I, I, O].into());
     assert_eq!(db.cell2noutputs, vec![3, 1, 1, 1, 1, 1, 1, 1, 1].into());
-    
+
     assert_eq!(db.net_zero, Some(7));
     assert_eq!(db.net_one, None);
 }

@@ -63,7 +63,7 @@ impl<T: UniversalCopy> AsUPtrMut<T> for RawUPtrMut<T> {
 /// An explicit null universal pointer.
 ///
 /// To create one, use [`NullUPtr::new`].
-/// 
+///
 /// You should only use it in functions that explicitly accepts
 /// null pointers (e.g., to represent optional inputs).
 #[non_exhaustive]

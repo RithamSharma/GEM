@@ -7,7 +7,7 @@ use compact_str::CompactString;
 use ulib::{UVec, Device, UniversalCopy, Zeroable};
 
 /// types of directions: input or output.
-/// 
+///
 /// note: inout is not supported yet.
 /// **should be identical to `csrc/lib.h`**.
 #[derive(Zeroable, Debug, PartialEq, Eq, Clone, UniversalCopy)]
@@ -54,7 +54,7 @@ impl LogicPinType {
 }
 
 /// The netlist storage.
-/// 
+///
 /// The public members are all READ-ONLY outside. Please modify
 /// them through the ECO commands that will be available
 /// in the future.
@@ -70,7 +70,7 @@ pub struct NetlistDB {
     /// the top-level macro.
     pub num_cells: usize,
     /// number of logical pins.
-    /// 
+    ///
     /// A logical pin is not necessarily a pin. It might
     /// be the I/O port of non-leaf modules, or the result
     /// of an assign operation.
@@ -97,7 +97,7 @@ pub struct NetlistDB {
     /// 3. pins of leaf cells.
     logicpinname2id: HashMap<(HierName, CompactString, Option<isize>), usize>,
     /// Pin name tuple (cell hier name, macro pin type, vec idx) to index.
-    /// 
+    ///
     /// Pin names are always unique without ambiguity.
     /// For top-level named port connections, only the port names are
     /// created as valid pin names. The I/O definition can be referred

@@ -215,7 +215,7 @@ impl ModuleMap {
                 }
             }
         }).collect();
-        
+
         ModuleMap { def_widths, def_types, port_widths }
     }
 
@@ -251,7 +251,7 @@ impl ModuleMap {
             Concat(v) => Right(v.iter().map(|b| eval_basic(self, b)).flatten())
         }
     }
-    
+
     /// Evaluate the length of an expr, based on the preprocessed widths.
     ///
     /// This is intended to be fast, as no need to enumerate the
@@ -263,7 +263,7 @@ impl ModuleMap {
 
 /// Estimate num_cells (leaf only) and num_logic_pins,
 /// and check that no recursion occurs in the hierarchy.
-/// 
+///
 /// The result estimation contains all ports of the
 /// entry module, all pins of leaf cells, and the recursive
 /// calculation of non-leaf submodules.

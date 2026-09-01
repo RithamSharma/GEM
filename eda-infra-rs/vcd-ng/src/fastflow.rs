@@ -109,7 +109,7 @@ impl<R: Read> FastFlow<R> {
         }.next_line()? {
             let line: &'i [u8] = line;
             // ok, we are safe now with the assumption above.
-            
+
             if line.len() == 0 { continue }
             return Ok(Some(match line[0] {
                 b'#' => FastFlowToken::Timestamp(

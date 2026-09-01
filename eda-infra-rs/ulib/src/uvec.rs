@@ -176,11 +176,11 @@ impl<T: UniversalCopy> From<UVec<T>> for Vec<T> {
 mod uvec_rayon {
     use super::*;
     use rayon::prelude::*;
-    
+
     impl<'i, T: UniversalCopy + Sync + 'i> IntoParallelIterator for &'i UVec<T> {
         type Iter = <&'i [T] as IntoParallelIterator>::Iter;
         type Item = &'i T;
-        
+
         #[inline]
         fn into_par_iter(self) -> Self::Iter {
             self.as_ref().into_par_iter()
@@ -190,7 +190,7 @@ mod uvec_rayon {
     impl<'i, T: UniversalCopy + Send + 'i> IntoParallelIterator for &'i mut UVec<T> {
         type Iter = <&'i mut [T] as IntoParallelIterator>::Iter;
         type Item = &'i mut T;
-        
+
         #[inline]
         fn into_par_iter(self) -> Self::Iter {
             self.as_mut().into_par_iter()
@@ -200,7 +200,7 @@ mod uvec_rayon {
     impl<T: UniversalCopy + Send> IntoParallelIterator for UVec<T> {
         type Iter = <Vec<T> as IntoParallelIterator>::Iter;
         type Item = T;
-        
+
         #[inline]
         fn into_par_iter(self) -> Self::Iter {
             Vec::<T>::from(self).into_par_iter()
@@ -295,14 +295,14 @@ impl<T: UniversalCopy> UVecInternal<T> {
             }
         }
     }
-    
+
     /// private function to get one device with valid data
     #[inline]
     fn device_valid(&self) -> Option<Device> {
         self.valid_flag.iter().enumerate().find(|(_i, v)| **v)
             .map(|(i, _v)| Device::from_id(i))
     }
-    
+
     #[inline]
     fn drop_all_buf(&mut self) {
         self.data_cpu = None;
@@ -323,7 +323,7 @@ impl<T: UniversalCopy> UVecInternal<T> {
         self.valid_flag.fill(false);
         self.valid_flag[device.to_id()] = true;
     }
-    
+
     #[inline]
     unsafe fn realloc_uninit_preserve(&mut self, device: Device) {
         use Device::*;
@@ -530,7 +530,7 @@ impl<T: UniversalCopy> UVec<T> {
     pub fn is_empty(&self) -> bool {
         self.get_intl().len == 0
     }
-    
+
     /// Get capacity of this vector.
     #[inline]
     pub fn capacity(&self) -> usize {
@@ -676,7 +676,7 @@ impl<T: UniversalCopy> UVec<T> {
 
 impl<T: UniversalCopy> AsRef<[T]> for UVec<T> {
     /// Get a CPU slice reference.
-    /// 
+    ///
     /// This COULD fail, actually, when we need to copy from
     /// a GPU value to CPU.
     /// This violates the guideline but we have no choice.
@@ -692,7 +692,7 @@ impl<T: UniversalCopy> AsRef<[T]> for UVec<T> {
 
 impl<T: UniversalCopy> AsMut<[T]> for UVec<T> {
     /// Get a mutable CPU slice reference.
-    /// 
+    ///
     /// This COULD fail, actually, when we need to copy from
     /// a GPU value to CPU.
     /// This violates the guideline but we have no choice.

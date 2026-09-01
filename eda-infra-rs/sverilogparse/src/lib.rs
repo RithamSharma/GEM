@@ -1,11 +1,11 @@
 //! A structural verilog parser written in Rust.
 //!
 //! # Usage
-//! 
+//!
 //! Just pass a `&str` to [SVerilog::parse_str]. Example:
 //! ```
 //! use sverilogparse::SVerilog;
-//! 
+//!
 //! let _parsed = SVerilog::parse_str(r#"
 //! module simple (a, b);
 //! input a;
@@ -124,13 +124,13 @@ impl SVerilog {
     pub fn parse_str(s: &str) -> Result<SVerilog, String> {
         Ok(sverilognom::parse_sverilog(s.as_bytes())?)
     }
-    
+
     /// Parses a u8 slice of structural verilog code, and returns a [Result], indicating successful parse result or an error string.
     #[inline]
     pub fn parse_u8slice(s: &[u8]) -> Result<SVerilog, String> {
         Ok(sverilognom::parse_sverilog(s)?)
     }
-    
+
     /// Parses a structural verilog code at the specific path, and returns a [Result], indicating successful parse result or an error string.
     #[inline]
     pub fn parse_file(path: impl AsRef<std::path::Path>) -> Result<SVerilog, String> {
