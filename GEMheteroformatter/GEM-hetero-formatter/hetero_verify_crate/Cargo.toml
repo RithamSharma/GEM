@@ -1,0 +1,10 @@
+[package]
+name = "hetero_verify"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+indexmap = "2"
+
+[lib]
+path = "lib.rs"
