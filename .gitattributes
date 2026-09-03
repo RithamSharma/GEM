@@ -1,0 +1,20 @@
+# Keep shell scripts, Python, Yosys scripts and Verilog LF on every platform.
+# A CRLF checkout breaks `#!/usr/bin/env bash` on Linux ("env: 'bash\r'").
+*.sh    text eol=lf
+*.py    text eol=lf
+*.ys    text eol=lf
+*.v     text eol=lf
+*.sv    text eol=lf
+*.rs    text eol=lf
+*.cu    text eol=lf
+*.cuh   text eol=lf
+*.h     text eol=lf
+*.toml  text eol=lf
+*.md    text eol=lf
+*.csv   text eol=lf
+*.lib   text eol=lf
+
+*.pdf   binary
+*.vcd   -text
+*.ncu-rep binary
+*.bat   text eol=crlf

@@ -1,0 +1,21 @@
+/target
+/build
+/Cargo.lock
+/compile_commands.json
+.cache
+*.log
+*.pb
+*.wdb
+*.jou
+xsim.dir/
+*.gv
+*.gemparts
+gem_output.vcd
+__pycache__/
+*.pyc
+/submission-results
+/verify_logs
+
+# keep recorded benchmark evidence even though *.gv / *.log are ignored above
+!/benchmark-results/
+!/benchmark-results/**

@@ -1,0 +1,71 @@
+{
+  "correctness_gate": "CPU V2 == CUDA V2 on every measured run",
+  "simulation_cycles": 302,
+  "cuda_blocks": 1,
+  "warmup_runs": 2,
+  "measured_runs": 9,
+  "samples": [
+    {
+      "elapsed_ms": 26.499751,
+      "simulation_cycles_per_second": 11396.333497624186
+    },
+    {
+      "elapsed_ms": 25.747548,
+      "simulation_cycles_per_second": 11729.272239826489
+    },
+    {
+      "elapsed_ms": 27.121955,
+      "simulation_cycles_per_second": 11134.890534255366
+    },
+    {
+      "elapsed_ms": 29.85984,
+      "simulation_cycles_per_second": 10113.9188957476
+    },
+    {
+      "elapsed_ms": 33.138149,
+      "simulation_cycles_per_second": 9113.363573807337
+    },
+    {
+      "elapsed_ms": 25.220361,
+      "simulation_cycles_per_second": 11974.451912088014
+    },
+    {
+      "elapsed_ms": 25.148449,
+      "simulation_cycles_per_second": 12008.692862132373
+    },
+    {
+      "elapsed_ms": 35.060345,
+      "simulation_cycles_per_second": 8613.720144510844
+    },
+    {
+      "elapsed_ms": 26.838771,
+      "simulation_cycles_per_second": 11252.378136092744
+    }
+  ],
+  "elapsed_ms": {
+    "median": 26.838771,
+    "mean": 28.292796555555555,
+    "stdev": 3.6096731508374167,
+    "min": 25.148449,
+    "max": 35.060345
+  },
+  "simulation_cycles_per_second": {
+    "median": 11252.378136092744,
+    "mean": 10815.224644009439,
+    "stdev": 1248.4699198944118,
+    "min": 8613.720144510844,
+    "max": 12008.692862132373
+  },
+  "command": [
+    "target/release/cuda_test",
+    "build/test300-final/gatelevel.gv",
+    "build/test300-final/result-1block.gemparts",
+    "build/test300-final/oracle.vcd",
+    "benchmark-results/v2_300cycle_1block.vcd",
+    "1",
+    "--input-vcd-scope",
+    "tb_300/uut",
+    "--check-with-cpu",
+    "--v2"
+  ]
+}

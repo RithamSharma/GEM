@@ -1,0 +1,45 @@
+$date
+  2026-09-01
+$end
+$version
+  GEM heterogeneous regression
+$end
+$timescale 1ns $end
+$scope module preservation_top $end
+$var wire 1 ! clk $end
+$var wire 27 " a [26:0] $end
+$var wire 27 # d [26:0] $end
+$var wire 18 $ b [17:0] $end
+$var wire 48 % c [47:0] $end
+$var wire 4 & s [3:0] $end
+$var wire 4 ' di [3:0] $end
+$var wire 1 ( ci $end
+$var wire 1 ) cyinit $end
+$var wire 1 * srl_d $end
+$var wire 1 + srl_ce $end
+$var wire 5 , srl_a [4:0] $end
+$upscope $end
+$enddefinitions $end
+#0
+0!
+b000000000000000000000000001 "
+b000000000000000000000000001 #
+b000000000000000001 $
+b000000000000000000000000000000000000000000000011 %
+b1111 &
+b0000 '
+0(
+0)
+1*
+1+
+b00000 ,
+#5
+1!
+#10
+0!
+b000000000000000000000000010 "
+b0001 '
+#15
+1!
+#20
+0!

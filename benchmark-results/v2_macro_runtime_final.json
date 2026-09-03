@@ -1,0 +1,76 @@
+{
+  "correctness_gate": "CPU V2 == CUDA V2 on every sample",
+  "git_revision": "320f93a1b33e15ac164baddd4244205f34e86cc4",
+  "working_tree_dirty": true,
+  "gpu": "NVIDIA GeForce GTX 1650, 610.57.04",
+  "samples": [
+    {
+      "reps": 10000.0,
+      "ms": 673.703,
+      "exec": 14843.338,
+      "operation": 89060.028
+    },
+    {
+      "reps": 10000.0,
+      "ms": 620.468,
+      "exec": 16116.856,
+      "operation": 96701.135
+    },
+    {
+      "reps": 10000.0,
+      "ms": 620.662,
+      "exec": 16111.832,
+      "operation": 96670.991
+    },
+    {
+      "reps": 10000.0,
+      "ms": 620.736,
+      "exec": 16109.907,
+      "operation": 96659.439
+    },
+    {
+      "reps": 10000.0,
+      "ms": 620.233,
+      "exec": 16122.974,
+      "operation": 96737.845
+    },
+    {
+      "reps": 10000.0,
+      "ms": 620.827,
+      "exec": 16107.557,
+      "operation": 96645.34
+    },
+    {
+      "reps": 10000.0,
+      "ms": 620.589,
+      "exec": 16113.726,
+      "operation": 96682.357
+    },
+    {
+      "reps": 10000.0,
+      "ms": 620.815,
+      "exec": 16107.852,
+      "operation": 96647.113
+    },
+    {
+      "reps": 10000.0,
+      "ms": 619.975,
+      "exec": 16129.692,
+      "operation": 96778.15
+    }
+  ],
+  "kernel_executions_per_second": {
+    "median": 16111.832,
+    "mean": 15973.748222222222,
+    "stdev": 423.9667784882378,
+    "min": 14843.338,
+    "max": 16129.692
+  },
+  "operation_evaluations_per_second": {
+    "median": 96670.991,
+    "mean": 95842.48866666667,
+    "stdev": 2543.800421539539,
+    "min": 89060.028,
+    "max": 96778.15
+  }
+}

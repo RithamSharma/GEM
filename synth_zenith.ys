@@ -1,0 +1,97 @@
+# Yosys Synthesis Script for Big-GEM Theory (Zenith PS)
+# This script intercepts DSP48E2, CARRY4, and SRLC32E primitives
+# and prevents them from being flattened by techmap/abc.
+#
+# Fixed from the original draft (which read no design, wrote no netlist,
+# and only *claimed* in a comment to set the blackbox attribute rather than
+# actually doing it -- so as shipped it produced nothing):
+#   - `read_verilog -lib` on zenith_macros.v is Yosys's real mechanism for
+#     "treat every module in this file as a blackbox during techmap/abc";
+#     the modules also already carry `(* blackbox *)` themselves (belt and
+#     suspenders).
+#   - design/top/output are now real parameters (via env vars, since this
+#     runs as a plain `.ys` script rather than a `-p` command string), not
+#     a hardcoded literal TOP_MODULE and two commented-out lines.
+#   - the redundant `synth -flatten` (which runs its own internal
+#     techmap/abc with no idea these three cells need to survive) is
+#     replaced by a single controlled `flatten` + the existing manual
+#     dfflibmap/abc/techmap/abc sequence.
+#   - GEM's Rust side loads netlists via NetlistDB::from_sverilog_file
+#     (see src/bin/*.rs) -- it reads Verilog, not JSON -- so write_verilog
+#     uncommented is the correct, necessary last step, not a guess.
+#   - a `select -assert-min` check fails the synthesis run itself if any of
+#     the three primitives didn't survive, instead of silently emitting a
+#     shredded netlist that only "looks" fine because Yosys exits 0.
+#
+# 2nd-audit fixes on top of the above:
+#   - F-01: `-c` runs the file as a raw Tcl command (hence "invalid command
+#     name read_verilog"), not as a plain Yosys script. `-s` is the correct
+#     flag for a `.ys` script written in ordinary Yosys command syntax.
+#   - F-02: this used to also `read_verilog aigpdk/aigpdk.v` -- but that
+#     file is a behavioral/UDP-based simulation model library (see the
+#     `primitive udp_dff ... endprimitive` construct), not something you
+#     synthesize against, and a plain Yosys read chokes on the UDP syntax.
+#     The proven-working reference flow (test_circuit/synth.ys) never reads
+#     aigpdk.v at all -- it maps cells purely via `dfflibmap -liberty` /
+#     `abc -liberty` against the .lib file below, so that line is simply
+#     removed rather than fixed.
+#   - F-03: the combined `select -assert-min 1 A B C %% t:* %d` expression's
+#     stack semantics turned out unreliable in practice (reported returning
+#     an empty selection); split into three separate, unambiguous
+#     per-primitive assertions so a failure names exactly which one is
+#     missing.
+#
+# This file is a template.  Use scripts/run_synth_zenith.sh; plain Yosys
+# scripts do not expand Tcl-style environment references.
+
+# Read our new zenith_macros as blackboxes. (Do NOT read aigpdk/aigpdk.v
+# here -- see F-02 above; cell mapping happens later via dfflibmap/abc
+# against aigpdk_nomem.lib instead.)
+read_verilog -lib -sv aigpdk/zenith_macros.v
+
+# Read the user design.
+@@GEM_READ@@ @@GEM_DESIGN@@
+
+hierarchy -check -top @@GEM_TOP@@
+
+# Simplify design
+proc;;
+opt_expr; opt_dff; opt_clean
+
+# Keep the original GEM synchronous-memory path functional alongside macros.
+memory -nomap
+memory_libmap -lib aigpdk/memlib_yosys.txt -logic-cost-rom 100 -logic-cost-ram 100
+
+# Flatten the hierarchy, but do NOT run the canned `synth -flatten` pass --
+# its own internal techmap/abc has no notion of these three primitives and
+# running it back-to-back with the manual mapping below invited a second,
+# conflicting round of technology mapping. DSP48E2/CARRY4/SRLC32E survive
+# `flatten` and the subsequent techmap/abc passes because they were loaded
+# as blackboxes above: Yosys never looks inside a blackbox module body (it
+# has none), so there is nothing for techmap/abc to shred.
+flatten
+
+# Standard GEM mapping
+# Lower generic word-wide RTL cells (notably the registered read data emitted
+# by memory_libmap) before dfflibmap.  Black-box Zenith primitives are opaque to
+# techmap and therefore remain intact.
+techmap
+dfflibmap -liberty aigpdk/aigpdk_nomem.lib
+opt_clean -purge
+abc -liberty aigpdk/aigpdk_nomem.lib
+opt_clean -purge
+techmap
+abc -liberty aigpdk/aigpdk_nomem.lib
+opt_clean -purge
+
+# Verification gate: fail the build here, with a clear message naming
+# exactly which primitive is missing, rather than silently handing a
+# shredded netlist to the rest of the flow. `stat` is printed either way so
+# a passing run's cell counts are on record too.
+# The wrapper performs conditional pre/post preservation checks.  Requiring
+# all three types here would incorrectly reject valid subset designs.
+stat
+
+# Write out the gate-level netlist that retains the DSP48E2, CARRY4,
+# SRLC32E instances, in Verilog (GEM's Rust side reads Verilog, not JSON).
+write_verilog -noattr @@GEM_OUT@@

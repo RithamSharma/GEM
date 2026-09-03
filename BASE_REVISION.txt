@@ -1,0 +1,16 @@
+Upstream GEM (NVIDIA Research) baseline this submission is built on.
+
+Branch-point ancestor:
+  Repository: https://github.com/Aishwary-Kumar-25/GEM.git
+  Branch:     updated_gem_branch
+  Revision:   0764603add3601ce5c40f97ba7e66a410394673e
+  Reason:     newest remote updated branch as of 2026-09-01; contains
+              gem2_updated revision f29e9ce plus the two September 1 v3 commits.
+
+Working revision the GPU verification + benchmarks were captured against
+(see benchmark-results/*.json -> "git_revision"):
+  320f93a1b33e15ac164baddd4244205f34e86cc4   ("Made changes to A subpart")
+
+Everything under the heterogeneous-macro contract (Parts A-E) is additive on
+top of that baseline. See HETERO_CHANGES.md for the file-by-file change log and
+MERGED_SUBMISSION.md for the part-by-part status and run instructions.

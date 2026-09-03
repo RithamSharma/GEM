@@ -1,0 +1,50 @@
+# Baseline ("unmodified GEM") synthesis: SHRED DSP48E2 / CARRY4 / SRLC32E into
+# ordinary AIG gates and flip-flops. This is the Part-D comparison point against
+# synth_zenith.ys (which preserves the three primitives as native units).
+#
+# It is a deliberate mirror of synth_zenith.ys -- SAME passes, SAME order --
+# with exactly one difference: the three macros are read as *real synthesizable
+# modules* (tests/hetero/behavioral_zenith_macros.sv) instead of as blackboxes
+# (aigpdk/zenith_macros.v). Because their bodies are now visible, techmap/abc
+# lower the 27x18 multiplier to an adder tree, the CARRY4 to gates, and the
+# SRLC32E to a 32-bit shift register -- the graph blow-up the PS asks us to
+# avoid by preserving them.
+#
+# Template file. Use scripts/run_synth_baseline.sh for @@ token expansion.
+
+# Read the three macros as REAL modules (NOT -lib / NOT blackbox).
+read_verilog -sv tests/hetero/behavioral_zenith_macros.sv
+
+# Read the user design.
+@@GEM_READ@@ @@GEM_DESIGN@@
+
+hierarchy -check -top @@GEM_TOP@@
+
+# Simplify design (identical to synth_zenith.ys)
+proc;;
+opt_expr; opt_dff; opt_clean
+
+# Keep the original GEM synchronous-memory path functional.
+memory -nomap
+memory_libmap -lib aigpdk/memlib_yosys.txt -logic-cost-rom 100 -logic-cost-ram 100
+
+# Flatten, then map. Unlike the zenith flow, the macros are ordinary hierarchy
+# here, so `flatten` inlines them and the following techmap/abc passes shred
+# them into the AIG-PDK cell library.
+flatten
+
+techmap
+dfflibmap -liberty aigpdk/aigpdk_nomem.lib
+opt_clean -purge
+abc -liberty aigpdk/aigpdk_nomem.lib
+opt_clean -purge
+techmap
+abc -liberty aigpdk/aigpdk_nomem.lib
+opt_clean -purge
+
+# Print cell counts so the benchmark harness can record the AIG graph size.
+# NOTE: unlike synth_zenith.ys there is no preservation assertion here -- the
+# whole point of the baseline is that the macros do NOT survive.
+stat
+
+write_verilog -noattr @@GEM_OUT@@

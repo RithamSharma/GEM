@@ -1,0 +1,14 @@
+read_verilog test_circuit/behavioral_test.sv
+hierarchy -check -top top_test_behavioral
+
+synth -flatten
+
+dfflibmap -liberty aigpdk/aigpdk_nomem.lib
+opt_clean -purge
+abc -liberty aigpdk/aigpdk_nomem.lib
+opt_clean -purge
+techmap
+abc -liberty aigpdk/aigpdk_nomem.lib
+opt_clean -purge
+
+write_verilog test_circuit/gatelevel_baseline.gv

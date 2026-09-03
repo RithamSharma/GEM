@@ -1,0 +1,14 @@
+read_verilog -sv test_circuit/top_test.sv
+hierarchy -check -top top_test
+
+synth -flatten
+
+dfflibmap -liberty aigpdk/aigpdk_nomem.lib
+opt_clean -purge
+abc -liberty aigpdk/aigpdk_nomem.lib
+opt_clean -purge
+techmap
+abc -liberty aigpdk/aigpdk_nomem.lib
+opt_clean -purge
+
+write_verilog test_circuit/gatelevel.gv
